@@ -50,6 +50,7 @@ import com.valsi.invoicesystem.ui.components.EmptyState
 import com.valsi.invoicesystem.ui.components.ValsiSearchBar
 import com.valsi.invoicesystem.ui.theme.BalanceDue
 import com.valsi.invoicesystem.util.Money
+import com.valsi.invoicesystem.viewmodel.CustomerListViewModel
 import kotlinx.coroutines.flow.collectLatest
 
 @OptIn(ExperimentalMaterial3Api::class)
