@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base theme; the app's real colors are driven by the Compose Material 3 theme.
+         This XML theme only styles the window/splash before Compose takes over. -->
+    <style name="Theme.ValsiInvoiceSystem" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@color/valsi_green</item>
+        <item name="android:windowBackground">@color/valsi_cream</item>
+    </style>
+</resources>

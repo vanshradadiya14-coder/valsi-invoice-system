@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Generated invoice PDFs live in the app cache; shared securely via FileProvider. -->
+    <cache-path name="invoices_cache" path="invoices/" />
+    <files-path name="invoices_files" path="invoices/" />
+    <external-files-path name="external_invoices" path="invoices/" />
+</paths>
