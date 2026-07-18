@@ -94,11 +94,11 @@ interface InvoiceDao {
 
     // ---- Dashboard aggregates ----
 
-    @Query("SELECT COUNT(*) FROM invoices WHERE status != 'VOID' AND createdAt BETWEEN :start AND :end")
+    @Query("SELECT COUNT(*) FROM invoices WHERE status = 'FINALIZED' AND createdAt BETWEEN :start AND :end")
     fun observeCountBetween(start: Long, end: Long): Flow<Int>
 
     @Query(
-        "SELECT COALESCE(SUM(grandTotal), 0.0) FROM invoices WHERE status != 'VOID' AND createdAt BETWEEN :start AND :end"
+        "SELECT COALESCE(SUM(grandTotal), 0.0) FROM invoices WHERE status = 'FINALIZED' AND createdAt BETWEEN :start AND :end"
     )
     fun observeSalesBetween(start: Long, end: Long): Flow<Double>
 
@@ -110,7 +110,7 @@ interface InvoiceDao {
     // ---- Balance & payment ----
 
     @Query(
-        "SELECT COALESCE(SUM(grandTotal - amountPaid), 0.0) FROM invoices WHERE customerId = :customerId AND status != 'VOID'"
+        "SELECT COALESCE(SUM(grandTotal - amountPaid), 0.0) FROM invoices WHERE customerId = :customerId AND status = 'FINALIZED'"
     )
     suspend fun outstandingForCustomer(customerId: Long): Double
 

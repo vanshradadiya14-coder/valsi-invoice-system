@@ -60,9 +60,17 @@ class InvoiceRepository @Inject constructor(
      * Persists a new invoice and its items atomically. When [NewInvoiceRequest.status] is
      * FINALIZED, a sequential invoice number is reserved from settings inside the same
      * transaction, guaranteeing no two invoices ever share a number even under concurrency.
-     * Returns the new invoice id.
+     * Returns the new invoice id. If [replaceDraftId] refers to an existing DRAFT invoice, that
+     * draft is deleted in the same transaction (used when finishing or re-saving a draft).
      */
-    suspend fun createInvoice(request: NewInvoiceRequest): Long = db.withTransaction {
+    suspend fun createInvoice(request: NewInvoiceRequest, replaceDraftId: Long? = null): Long =
+        db.withTransaction {
+        // Remove the draft being resumed so it isn't duplicated.
+        if (replaceDraftId != null) {
+            invoiceDao.getById(replaceDraftId)?.let { old ->
+                if (old.status == InvoiceStatus.DRAFT) invoiceDao.delete(old)
+            }
+        }
         val subtotal = request.lines.sumOf { it.lineTotal }
         val grandTotal = subtotal - request.discountAmount + request.vatAmount
         val amountPaid = normalizeAmountPaid(request.paymentStatus, request.amountPaid, grandTotal)

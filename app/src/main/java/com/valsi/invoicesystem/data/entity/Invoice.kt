@@ -35,4 +35,8 @@ data class Invoice(
     val amountPaid: Double = 0.0,
     val createdAt: Long = System.currentTimeMillis(),
     val notes: String? = null,
-)
+) {
+    /** User-facing number: real invoices show their number; drafts just show "Draft". */
+    val displayNumber: String
+        get() = if (status == InvoiceStatus.DRAFT) "Draft" else invoiceNumber
+}

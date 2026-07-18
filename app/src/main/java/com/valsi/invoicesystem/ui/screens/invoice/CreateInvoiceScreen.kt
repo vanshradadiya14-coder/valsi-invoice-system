@@ -19,12 +19,15 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AddShoppingCart
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.ShoppingCartCheckout
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -42,6 +45,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -86,9 +90,13 @@ fun CreateInvoiceScreen(
     val customerQuery by viewModel.customerQuery.collectAsStateWithLifecycle()
     val productQuery by viewModel.productQuery.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    var showExitDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.generatedInvoiceId) {
         state.generatedInvoiceId?.let(onInvoiceGenerated)
+    }
+    LaunchedEffect(state.savedAsDraft) {
+        if (state.savedAsDraft) onClose()
     }
     LaunchedEffect(state.error) {
         state.error?.let {
@@ -97,21 +105,34 @@ fun CreateInvoiceScreen(
         }
     }
 
+    val attemptExit = { if (state.hasContent) showExitDialog = true else onClose() }
+
+    // System back navigates the wizard backwards; on the first step it offers to save/leave.
+    BackHandler {
+        if (state.step != InvoiceStep.CUSTOMER) viewModel.back() else attemptExit()
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(titleFor(state.step)) },
                 navigationIcon = {
-                    IconButton(onClick = {
-                        if (state.step == InvoiceStep.CUSTOMER) onClose() else viewModel.back()
-                    }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    IconButton(onClick = attemptExit) {
+                        Icon(Icons.Filled.Close, contentDescription = "Close")
+                    }
+                },
+                actions = {
+                    if (state.selectedCustomer != null) {
+                        TextButton(onClick = { viewModel.saveAsDraft() }, enabled = !state.isSaving) {
+                            Text("Save Draft", color = MaterialTheme.colorScheme.onPrimary)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
                     navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary,
                 ),
             )
         },
@@ -163,6 +184,55 @@ fun CreateInvoiceScreen(
             }
         }
     }
+
+    if (showExitDialog) {
+        ExitConfirmDialog(
+            canSaveDraft = state.selectedCustomer != null,
+            onSaveDraft = {
+                showExitDialog = false
+                viewModel.saveAsDraft()
+            },
+            onDiscard = {
+                showExitDialog = false
+                onClose()
+            },
+            onCancel = { showExitDialog = false },
+        )
+    }
+}
+
+@Composable
+private fun ExitConfirmDialog(
+    canSaveDraft: Boolean,
+    onSaveDraft: () -> Unit,
+    onDiscard: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text("Leave this invoice?") },
+        text = {
+            Text(
+                if (canSaveDraft) "Save it as a draft to finish later, or discard it."
+                else "Your changes will be lost.",
+            )
+        },
+        confirmButton = {
+            if (canSaveDraft) {
+                TextButton(onClick = onSaveDraft) { Text("Save as Draft") }
+            } else {
+                TextButton(onClick = onDiscard) { Text("Discard") }
+            }
+        },
+        dismissButton = {
+            Row {
+                if (canSaveDraft) {
+                    TextButton(onClick = onDiscard) { Text("Discard") }
+                }
+                TextButton(onClick = onCancel) { Text("Cancel") }
+            }
+        },
+    )
 }
 
 private fun titleFor(step: InvoiceStep): String = when (step) {
@@ -628,11 +698,18 @@ private fun InvoiceBottomBar(state: InvoiceCreationState, viewModel: InvoiceCrea
         }
         InvoiceStep.PRODUCTS -> {
             BottomBarContainer {
-                OutlinedButton(
-                    onClick = { viewModel.goToStep(InvoiceStep.CART) },
-                    enabled = state.cart.isNotEmpty(),
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("Review Cart (${state.itemCount} items)") }
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    BackStepButton(viewModel)
+                    Button(
+                        onClick = { viewModel.goToStep(InvoiceStep.CART) },
+                        enabled = state.cart.isNotEmpty(),
+                        modifier = Modifier.weight(1f),
+                    ) { Text("Review Cart (${state.itemCount})") }
+                }
             }
         }
         InvoiceStep.CART -> {
@@ -642,7 +719,8 @@ private fun InvoiceBottomBar(state: InvoiceCreationState, viewModel: InvoiceCrea
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Column {
+                    BackStepButton(viewModel)
+                    Column(horizontalAlignment = Alignment.End) {
                         Text("Subtotal", style = MaterialTheme.typography.bodyMedium)
                         Text(
                             Money.format(state.subtotal, state.currencySymbol),
@@ -653,7 +731,7 @@ private fun InvoiceBottomBar(state: InvoiceCreationState, viewModel: InvoiceCrea
                     Button(
                         onClick = { viewModel.goToStep(InvoiceStep.SUMMARY) },
                         enabled = state.cart.isNotEmpty(),
-                    ) { Text("Continue to Summary") }
+                    ) { Text("Next") }
                 }
             }
         }
@@ -664,11 +742,12 @@ private fun InvoiceBottomBar(state: InvoiceCreationState, viewModel: InvoiceCrea
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Column {
+                    BackStepButton(viewModel)
+                    Column(horizontalAlignment = Alignment.End) {
                         Text("Grand Total", style = MaterialTheme.typography.bodyMedium)
                         Text(
                             Money.format(state.grandTotal, state.currencySymbol),
-                            style = MaterialTheme.typography.titleLarge,
+                            style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary,
                         )
@@ -683,12 +762,19 @@ private fun InvoiceBottomBar(state: InvoiceCreationState, viewModel: InvoiceCrea
                         } else {
                             Icon(Icons.Filled.ShoppingCartCheckout, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("Generate Invoice")
+                            Text("Generate")
                         }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun BackStepButton(viewModel: InvoiceCreationViewModel) {
+    OutlinedButton(onClick = { viewModel.back() }, contentPadding = PaddingValues(horizontal = 12.dp)) {
+        Icon(Icons.Filled.ArrowBack, contentDescription = "Back", modifier = Modifier.size(18.dp))
     }
 }
 

@@ -30,6 +30,7 @@ fun InvoiceRow(
 ) {
     val invoice = row.invoice
     val isVoid = invoice.status == InvoiceStatus.VOID
+    val isDraft = invoice.status == InvoiceStatus.DRAFT
 
     Card(
         onClick = onClick,
@@ -46,7 +47,7 @@ fun InvoiceRow(
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = invoice.invoiceNumber,
+                        text = invoice.displayNumber,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         textDecoration = if (isVoid) TextDecoration.LineThrough else null,
@@ -57,6 +58,14 @@ fun InvoiceRow(
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.error,
                             fontWeight = FontWeight.Bold,
+                        )
+                    }
+                    if (isDraft) {
+                        Text(
+                            text = "  ·  unsent",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.tertiary,
+                            fontWeight = FontWeight.SemiBold,
                         )
                     }
                 }

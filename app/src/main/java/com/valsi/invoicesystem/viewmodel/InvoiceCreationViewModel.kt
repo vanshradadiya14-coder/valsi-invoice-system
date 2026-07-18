@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.valsi.invoicesystem.data.entity.Customer
+import com.valsi.invoicesystem.data.entity.InvoiceStatus
 import com.valsi.invoicesystem.data.entity.PaymentStatus
 import com.valsi.invoicesystem.data.entity.Product
 import com.valsi.invoicesystem.data.model.NewInvoiceLine
@@ -53,10 +54,13 @@ data class InvoiceCreationState(
     val currencySymbol: String = "£",
     val isSaving: Boolean = false,
     val generatedInvoiceId: Long? = null,
+    val savedAsDraft: Boolean = false,
     val error: String? = null,
 ) {
     val itemCount: Int get() = cart.sumOf { it.quantity }
     val subtotal: Double get() = cart.sumOf { it.lineTotal }
+    /** True once the rep has entered anything worth keeping. */
+    val hasContent: Boolean get() = selectedCustomer != null || cart.isNotEmpty()
 
     val discountAmount: Double
         get() {
@@ -82,7 +86,11 @@ class InvoiceCreationViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
-    private val duplicateFrom: Long = savedStateHandle[Routes.ARG_DUPLICATE_FROM] ?: Routes.NO_DUPLICATE
+    private val duplicateFrom: Long = savedStateHandle[Routes.ARG_DUPLICATE_FROM] ?: Routes.NO_ID
+    private val editDraftId: Long = savedStateHandle[Routes.ARG_EDIT_DRAFT] ?: Routes.NO_ID
+
+    // Set when resuming a draft, so finishing/saving replaces it instead of duplicating.
+    private var replaceDraftId: Long? = editDraftId.takeIf { it != Routes.NO_ID }
 
     private val _state = MutableStateFlow(InvoiceCreationState())
     val state: StateFlow<InvoiceCreationState> = _state.asStateFlow()
@@ -115,12 +123,19 @@ class InvoiceCreationViewModel @Inject constructor(
                     vatPercentInput = trimTrailingZero(settings.defaultVatPercent),
                 )
             }
-            if (duplicateFrom != Routes.NO_DUPLICATE) prefillFromInvoice(duplicateFrom)
+            when {
+                editDraftId != Routes.NO_ID -> prefillFromInvoice(editDraftId, useCurrentPrices = false)
+                duplicateFrom != Routes.NO_ID -> prefillFromInvoice(duplicateFrom, useCurrentPrices = true)
+            }
         }
     }
 
-    /** Duplicate: pre-fill customer and lines using CURRENT product prices (per Step 9). */
-    private suspend fun prefillFromInvoice(invoiceId: Long) {
+    /**
+     * Pre-fill customer and lines from an existing invoice.
+     * @param useCurrentPrices true for Duplicate (latest prices); false for resuming a draft
+     *        (keep the prices the rep already entered).
+     */
+    private suspend fun prefillFromInvoice(invoiceId: Long, useCurrentPrices: Boolean) {
         val source = invoiceRepository.getWithItems(invoiceId) ?: return
         val customer = customerRepository.getById(source.invoice.customerId)
         val lines = source.items.map { item ->
@@ -130,10 +145,17 @@ class InvoiceCreationViewModel @Inject constructor(
                 productName = product?.name ?: item.productNameSnapshot,
                 unit = product?.unit ?: "pack",
                 quantity = item.quantity,
-                unitPrice = product?.currentPrice ?: item.unitPriceSnapshot,
+                unitPrice = if (useCurrentPrices) product?.currentPrice ?: item.unitPriceSnapshot
+                else item.unitPriceSnapshot,
             )
         }
-        _state.update { it.copy(selectedCustomer = customer, cart = lines) }
+        _state.update {
+            it.copy(
+                selectedCustomer = customer,
+                cart = lines,
+                notes = source.invoice.notes.orEmpty(),
+            )
+        }
     }
 
     // ---- Step navigation ----
@@ -222,12 +244,26 @@ class InvoiceCreationViewModel @Inject constructor(
 
     fun clearError() = _state.update { it.copy(error = null) }
 
-    // ---- Generate ----
+    private fun buildRequest(current: InvoiceCreationState, status: InvoiceStatus) =
+        NewInvoiceRequest(
+            customerId = current.selectedCustomer!!.id,
+            lines = current.cart.map {
+                NewInvoiceLine(it.productId, it.productName, it.quantity, it.unitPrice)
+            },
+            discountAmount = current.discountAmount,
+            vatAmount = current.vatAmount,
+            paymentStatus = current.paymentStatus,
+            // Repository normalizes amountPaid against the final status and grand total.
+            amountPaid = current.amountPaidInput.toDoubleOrNull() ?: 0.0,
+            notes = current.notes.trim().ifBlank { null },
+            status = status,
+        )
+
+    // ---- Generate (finalize) ----
     fun generateInvoice() {
         val current = _state.value
-        val customer = current.selectedCustomer
         when {
-            customer == null -> {
+            current.selectedCustomer == null -> {
                 _state.update { it.copy(error = "Please select a customer.", step = InvoiceStep.CUSTOMER) }
                 return
             }
@@ -240,23 +276,31 @@ class InvoiceCreationViewModel @Inject constructor(
         _state.update { it.copy(isSaving = true, error = null) }
         viewModelScope.launch {
             try {
-                // Repository normalizes amountPaid against the final status and grand total.
-                val amountPaid = current.amountPaidInput.toDoubleOrNull() ?: 0.0
-                val request = NewInvoiceRequest(
-                    customerId = customer!!.id,
-                    lines = current.cart.map {
-                        NewInvoiceLine(it.productId, it.productName, it.quantity, it.unitPrice)
-                    },
-                    discountAmount = current.discountAmount,
-                    vatAmount = current.vatAmount,
-                    paymentStatus = current.paymentStatus,
-                    amountPaid = amountPaid,
-                    notes = current.notes.trim().ifBlank { null },
-                )
-                val id = invoiceRepository.createInvoice(request)
+                val request = buildRequest(current, InvoiceStatus.FINALIZED)
+                val id = invoiceRepository.createInvoice(request, replaceDraftId = replaceDraftId)
                 _state.update { it.copy(isSaving = false, generatedInvoiceId = id) }
             } catch (e: Exception) {
                 _state.update { it.copy(isSaving = false, error = "Could not save invoice: ${e.message}") }
+            }
+        }
+    }
+
+    /** Saves the in-progress invoice as a DRAFT so nothing is lost. Requires a customer. */
+    fun saveAsDraft() {
+        val current = _state.value
+        if (current.selectedCustomer == null) {
+            _state.update { it.copy(error = "Pick a customer before saving a draft.", step = InvoiceStep.CUSTOMER) }
+            return
+        }
+        _state.update { it.copy(isSaving = true, error = null) }
+        viewModelScope.launch {
+            try {
+                val request = buildRequest(current, InvoiceStatus.DRAFT)
+                val newId = invoiceRepository.createInvoice(request, replaceDraftId = replaceDraftId)
+                replaceDraftId = newId // in case the flow continues after saving
+                _state.update { it.copy(isSaving = false, savedAsDraft = true) }
+            } catch (e: Exception) {
+                _state.update { it.copy(isSaving = false, error = "Could not save draft: ${e.message}") }
             }
         }
     }

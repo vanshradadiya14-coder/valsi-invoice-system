@@ -65,7 +65,11 @@ fun ValsiApp() {
                 arguments = listOf(
                     navArgument(Routes.ARG_DUPLICATE_FROM) {
                         type = NavType.LongType
-                        defaultValue = Routes.NO_DUPLICATE
+                        defaultValue = Routes.NO_ID
+                    },
+                    navArgument(Routes.ARG_EDIT_DRAFT) {
+                        type = NavType.LongType
+                        defaultValue = Routes.NO_ID
                     },
                 ),
             ) {
@@ -95,6 +99,12 @@ fun ValsiApp() {
                     onBack = { navController.popBackStack() },
                     onDuplicate = { invoiceId ->
                         navController.navigate(Routes.createInvoice(duplicateFrom = invoiceId))
+                    },
+                    onEditDraft = { invoiceId ->
+                        navController.navigate(Routes.createInvoice(editDraft = invoiceId)) {
+                            // Leave the draft's detail screen; we're resuming it now.
+                            popUpTo(Routes.INVOICE_DETAIL) { inclusive = true }
+                        }
                     },
                 )
             }

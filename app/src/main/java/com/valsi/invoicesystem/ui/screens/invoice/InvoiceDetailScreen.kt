@@ -18,6 +18,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Print
@@ -75,6 +76,7 @@ import com.valsi.invoicesystem.viewmodel.PdfAction
 fun InvoiceDetailScreen(
     onBack: () -> Unit,
     onDuplicate: (Long) -> Unit,
+    onEditDraft: (Long) -> Unit = {},
     viewModel: InvoiceDetailViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -111,7 +113,7 @@ fun InvoiceDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(invoice?.invoiceNumber ?: "Invoice") },
+                title = { Text(invoice?.displayNumber ?: "Invoice") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -135,6 +137,11 @@ fun InvoiceDetailScreen(
                             )
                         }
                         if (invoice?.status == InvoiceStatus.DRAFT) {
+                            DropdownMenuItem(
+                                text = { Text("Continue editing") },
+                                leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
+                                onClick = { menuExpanded = false; onEditDraft(viewModel.invoiceId) },
+                            )
                             DropdownMenuItem(
                                 text = { Text("Delete draft") },
                                 leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
@@ -235,7 +242,7 @@ private fun StatusHeader(detail: InvoiceDetail, currencySymbol: String) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column {
-                    Text(detail.invoice.invoiceNumber, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(detail.invoice.displayNumber, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text(
                         DateUtils.formatDateTime(detail.invoice.createdAt),
                         style = MaterialTheme.typography.bodyMedium,
