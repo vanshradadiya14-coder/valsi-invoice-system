@@ -83,12 +83,20 @@ class InvoiceDetailViewModel @Inject constructor(
         }
     }
 
-    /** Deletes a draft invoice; returns via callback so the screen can navigate back. */
-    fun deleteDraft(onDeleted: () -> Unit) {
+    /**
+     * Permanently deletes this invoice and its line items, then refreshes the customer's
+     * outstanding balance. Works for drafts and for finalized invoices entered by mistake —
+     * deleting a finalized one leaves a gap in the invoice numbering (the screen warns first).
+     */
+    fun deleteInvoice(onDeleted: () -> Unit) {
         val invoice = state.value.detail?.invoice ?: return
         viewModelScope.launch {
-            invoiceRepository.deleteInvoice(invoice)
-            onDeleted()
+            try {
+                invoiceRepository.deleteInvoice(invoice)
+                onDeleted()
+            } catch (e: Exception) {
+                _events.send(DetailEvent.Message("Could not delete invoice: ${e.message}"))
+            }
         }
     }
 }

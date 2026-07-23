@@ -135,7 +135,11 @@ class InvoiceRepository @Inject constructor(
         recalcOutstanding(invoice.customerId)
     }
 
-    /** Deletes a draft invoice (its items cascade) and refreshes the balance. */
+    /**
+     * Permanently deletes an invoice (its items cascade) and refreshes the customer's balance.
+     * Used for drafts, and for finalized invoices the rep confirms deleting outright (as opposed
+     * to [voidInvoice], which keeps the record and invoice number).
+     */
     suspend fun deleteInvoice(invoice: Invoice) = db.withTransaction {
         invoiceDao.delete(invoice)
         recalcOutstanding(invoice.customerId)

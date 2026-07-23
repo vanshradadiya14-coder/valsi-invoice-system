@@ -87,6 +87,7 @@ fun InvoiceDetailScreen(
     var showPaymentDialog by remember { mutableStateOf(false) }
     var confirmVoid by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var confirmDeleteFinalized by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -135,6 +136,11 @@ fun InvoiceDetailScreen(
                                 leadingIcon = { Icon(Icons.Filled.Block, contentDescription = null) },
                                 onClick = { menuExpanded = false; confirmVoid = true },
                             )
+                            DropdownMenuItem(
+                                text = { Text("Delete invoice") },
+                                leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
+                                onClick = { menuExpanded = false; confirmDeleteFinalized = true },
+                            )
                         }
                         if (invoice?.status == InvoiceStatus.DRAFT) {
                             DropdownMenuItem(
@@ -146,6 +152,13 @@ fun InvoiceDetailScreen(
                                 text = { Text("Delete draft") },
                                 leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
                                 onClick = { menuExpanded = false; confirmDelete = true },
+                            )
+                        }
+                        if (invoice?.status == InvoiceStatus.VOID) {
+                            DropdownMenuItem(
+                                text = { Text("Delete invoice") },
+                                leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
+                                onClick = { menuExpanded = false; confirmDeleteFinalized = true },
                             )
                         }
                     }
@@ -223,11 +236,37 @@ fun InvoiceDetailScreen(
             text = { Text("This draft invoice will be permanently deleted.") },
             confirmButton = {
                 TextButton(onClick = {
-                    viewModel.deleteDraft(onDeleted = onBack)
+                    viewModel.deleteInvoice(onDeleted = onBack)
                     confirmDelete = false
                 }) { Text("Delete") }
             },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
+        )
+    }
+
+    if (confirmDeleteFinalized) {
+        AlertDialog(
+            onDismissRequest = { confirmDeleteFinalized = false },
+            title = { Text("Delete this invoice?") },
+            text = {
+                Text(
+                    "This permanently deletes ${invoice?.displayNumber.orEmpty()} and removes it from " +
+                        "history — use this only for a mistaken or duplicate entry. Its invoice number " +
+                        "will not be reused. This can't be undone.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteInvoice(onDeleted = onBack)
+                        confirmDeleteFinalized = false
+                    },
+                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
+                ) { Text("Delete permanently") }
+            },
+            dismissButton = { TextButton(onClick = { confirmDeleteFinalized = false }) { Text("Cancel") } },
         )
     }
 }
